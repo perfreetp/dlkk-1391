@@ -3,8 +3,10 @@ import type {
   BorrowRecord,
   DamageReport,
   Deposit,
+  DepositType,
   Compensation,
   Statistics,
+  User,
 } from '@/types';
 import {
   getRecords,
@@ -12,12 +14,16 @@ import {
   getDamageReports,
   setDamageReports,
   getDeposits,
+  setDeposits,
   getCompensations,
   setCompensations,
   generateId,
+  getUsers,
+  setUsers,
+  getCurrentUser,
+  setCurrentUser,
 } from '@/utils/storage';
 import { getCurrentTimeISO, isOverdue, isSoonDue } from '@/utils/date';
-import { useAuthStore } from './authStore';
 import { useToolStore } from './toolStore';
 
 interface RecordState {
@@ -25,6 +31,15 @@ interface RecordState {
   damageReports: DamageReport[];
   deposits: Deposit[];
   compensations: Compensation[];
+
+  addDeposit: (userId: string, amount: number, type: DepositType, remark?: string) => Deposit;
+
+  addCompensation: (
+    recordId: string,
+    userId: string,
+    amount: number,
+    reason: string
+  ) => Compensation;
 
   borrowTool: (
     reservationId: string,
@@ -57,6 +72,13 @@ interface RecordState {
   getDepositsByUser: (userId: string) => Deposit[];
 
   getCompensationsByUser: (userId: string) => Compensation[];
+
+  updateUser: (updatedUser: User) => void;
+
+  getCurrentUserState: () => User | null;
+  setCurrentUserState: (user: User | null) => void;
+
+  getUsersState: () => User[];
 }
 
 export const useRecordStore = create<RecordState>((set, get) => ({
@@ -64,6 +86,81 @@ export const useRecordStore = create<RecordState>((set, get) => ({
   damageReports: getDamageReports(),
   deposits: getDeposits(),
   compensations: getCompensations(),
+
+  addDeposit: (userId: string, amount: number, type: DepositType, remark?: string) => {
+    const newDeposit: Deposit = {
+      id: generateId('DEP'),
+      userId,
+      amount,
+      type,
+      status: 'success',
+      createdAt: getCurrentTimeISO(),
+      remark,
+    };
+    const updatedDeposits = [...get().deposits, newDeposit];
+    setDeposits(updatedDeposits);
+    set({ deposits: updatedDeposits });
+
+    let balanceDelta = 0;
+    if (type === 'recharge') balanceDelta = amount;
+    else if (type === 'freeze') balanceDelta = -amount;
+    else if (type === 'unfreeze') balanceDelta = amount;
+    else if (type === 'refund') balanceDelta = amount;
+
+    if (balanceDelta !== 0) {
+      const users = getUsers();
+      const user = users.find((u) => u.id === userId);
+      if (user) {
+        const updatedUser = { ...user, depositBalance: user.depositBalance + balanceDelta };
+        const updatedUsers = users.map((u) => (u.id === userId ? updatedUser : u));
+        setUsers(updatedUsers);
+        const cur = getCurrentUser();
+        if (cur?.id === userId) {
+          setCurrentUser(updatedUser);
+        }
+      }
+    }
+
+    return newDeposit;
+  },
+
+  addCompensation: (
+    recordId: string,
+    userId: string,
+    amount: number,
+    reason: string
+  ) => {
+    const newCompensation: Compensation = {
+      id: generateId('CMP'),
+      recordId,
+      userId,
+      amount,
+      reason,
+      createdAt: getCurrentTimeISO(),
+    };
+    const updatedCompensations = [...get().compensations, newCompensation];
+    setCompensations(updatedCompensations);
+    set({ compensations: updatedCompensations });
+    return newCompensation;
+  },
+
+  updateUser: (updatedUser: User) => {
+    const users = getUsers();
+    const updatedUsers = users.map((u) => (u.id === updatedUser.id ? updatedUser : u));
+    setUsers(updatedUsers);
+    const cur = getCurrentUser();
+    if (cur?.id === updatedUser.id) {
+      setCurrentUser(updatedUser);
+    }
+  },
+
+  getCurrentUserState: () => getCurrentUser(),
+
+  setCurrentUserState: (user: User | null) => {
+    setCurrentUser(user);
+  },
+
+  getUsersState: () => getUsers(),
 
   borrowTool: (
     reservationId: string,
@@ -115,23 +212,24 @@ export const useRecordStore = create<RecordState>((set, get) => ({
 
     useToolStore.getState().updateToolStock(record.toolId, 1);
 
-    const authStore = useAuthStore.getState();
     if (!isDamaged) {
-      authStore.updateDepositBalance(record.userId, record.depositAmount, 'unfreeze', '工具完好归还，释放占用押金');
+      get().addDeposit(record.userId, record.depositAmount, 'unfreeze', '工具完好归还，释放占用押金');
     } else {
-      const user = authStore.users.find((u) => u.id === record.userId);
+      const user = get().getUsersState().find((u) => u.id === record.userId);
       if (user) {
-        authStore.updateUser({ ...user, damageCount: user.damageCount + 1 });
+        get().updateUser({ ...user, damageCount: user.damageCount + 1 });
       }
     }
 
-    const user = authStore.users.find((u) => u.id === record.userId);
+    const user = get().getUsersState().find((u) => u.id === record.userId);
     if (user && isOverdue(record.expectedReturnTime)) {
       const newOverdueCount = user.overdueCount + 1;
-      authStore.updateUser({
+      const damageCount = user.damageCount + (isDamaged ? 1 : 0);
+      get().updateUser({
         ...user,
         overdueCount: newOverdueCount,
-        isBlacklisted: newOverdueCount >= 5 || user.damageCount >= 3,
+        damageCount,
+        isBlacklisted: newOverdueCount >= 5 || damageCount >= 3,
       });
     }
 
@@ -191,11 +289,10 @@ export const useRecordStore = create<RecordState>((set, get) => ({
 
         useToolStore.getState().updateToolStock(record.toolId, 1);
 
-        const authStore = useAuthStore.getState();
-        const user = authStore.users.find((u) => u.id === record.userId);
+        const user = get().getUsersState().find((u) => u.id === record.userId);
         if (user) {
           const newDamageCount = user.damageCount + 1;
-          authStore.updateUser({
+          get().updateUser({
             ...user,
             damageCount: newDamageCount,
             isBlacklisted: user.overdueCount >= 5 || newDamageCount >= 3,
@@ -203,36 +300,24 @@ export const useRecordStore = create<RecordState>((set, get) => ({
         }
 
         if (isOverdue(record.expectedReturnTime)) {
-          const user = authStore.users.find((u) => u.id === record.userId);
-          if (user) {
-            const newOverdueCount = user.overdueCount + 1;
-            authStore.updateUser({
-              ...user,
+          const u = get().getUsersState().find((x) => x.id === record.userId);
+          if (u) {
+            const newOverdueCount = u.overdueCount + 1;
+            get().updateUser({
+              ...u,
               overdueCount: newOverdueCount,
-              isBlacklisted: newOverdueCount >= 5 || user.damageCount >= 3,
+              isBlacklisted: newOverdueCount >= 5 || u.damageCount >= 3,
             });
           }
         }
       }
 
-      const newCompensation: Compensation = {
-        id: generateId('CMP'),
-        recordId: report.recordId,
-        userId: report.userId,
-        amount: compensationAmount,
-        reason: report.description,
-        createdAt: getCurrentTimeISO(),
-      };
-
-      const compensations = [...get().compensations, newCompensation];
-      setCompensations(compensations);
-      set({ compensations });
+      get().addCompensation(report.recordId, report.userId, compensationAmount, report.description);
 
       if (record) {
         const refundAmount = Math.max(0, record.depositAmount - compensationAmount);
         if (refundAmount > 0) {
-          const authStore = useAuthStore.getState();
-          authStore.updateDepositBalance(
+          get().addDeposit(
             report.userId,
             refundAmount,
             'unfreeze',

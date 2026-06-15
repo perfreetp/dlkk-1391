@@ -44,6 +44,7 @@ export const Tools = () => {
     getToolById,
     getAvailableSlots,
     updateTool,
+    getAdjustmentLogsByTool,
   } = useToolStore();
   const { currentUser } = useAuthStore();
 
@@ -529,6 +530,53 @@ export const Tools = () => {
                   已预约
                 </span>
               </div>
+            </div>
+
+            {/* Adjustment Logs */}
+            <div className="border-t border-gray-100 pt-6">
+              <h4 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                <Settings className="w-4 h-4 text-primary-500" />
+                最近调配记录
+              </h4>
+              {(() => {
+                const logs = getAdjustmentLogsByTool(selectedTool.id).slice(0, 5);
+                if (logs.length === 0) {
+                  return (
+                    <p className="text-sm text-gray-400 text-center py-6">暂无调配记录</p>
+                  );
+                }
+                return (
+                  <div className="space-y-3">
+                    {logs.map((log) => (
+                      <div
+                        key={log.id}
+                        className="p-3 bg-gray-50 rounded-lg border border-gray-100"
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-sm font-medium text-gray-900">
+                            {log.operatorName}
+                          </span>
+                          <span className="text-xs text-gray-500">
+                            {formatDateCN(log.createdAt)}
+                          </span>
+                        </div>
+                        <div className="space-y-1">
+                          {log.changes.map((c, i) => (
+                            <p key={i} className="text-xs text-gray-600 flex items-center gap-2">
+                              <span className="px-2 py-0.5 bg-primary-100 text-primary-700 rounded text-xs">
+                                {c.label}
+                              </span>
+                              <span className="text-gray-500 line-through">{String(c.oldValue)}</span>
+                              <ChevronRight className="w-3 h-3 text-gray-400" />
+                              <span className="text-primary-600 font-medium">{String(c.newValue)}</span>
+                            </p>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
             </div>
 
             {/* QR Code for Admin */}

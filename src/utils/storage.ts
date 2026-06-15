@@ -9,6 +9,7 @@ import type {
   Deposit,
   Compensation,
   Notice,
+  ToolAdjustmentLog,
 } from '@/types';
 import { mockCategories } from '@/data/mockCategories';
 import { mockBuildings } from '@/data/mockBuildings';
@@ -35,6 +36,7 @@ const STORAGE_KEYS = {
   compensations: 'tool_platform_compensations',
   notices: 'tool_platform_notices',
   currentUser: 'tool_platform_current_user',
+  adjustmentLogs: 'tool_platform_adjustment_logs',
 };
 
 export const initializeData = () => {
@@ -67,6 +69,9 @@ export const initializeData = () => {
   }
   if (!localStorage.getItem(STORAGE_KEYS.compensations)) {
     localStorage.setItem(STORAGE_KEYS.compensations, JSON.stringify(mockCompensations));
+  }
+  if (!localStorage.getItem(STORAGE_KEYS.adjustmentLogs)) {
+    localStorage.setItem(STORAGE_KEYS.adjustmentLogs, JSON.stringify([]));
   }
 };
 
@@ -134,3 +139,8 @@ export const setCurrentUser = (user: User | null): void => {
 export const generateId = (prefix: string): string => {
   return `${prefix}${Date.now()}${Math.random().toString(36).substr(2, 4).toUpperCase()}`;
 };
+
+export const getAdjustmentLogs = (): ToolAdjustmentLog[] =>
+  getFromStorage<ToolAdjustmentLog[]>(STORAGE_KEYS.adjustmentLogs);
+export const setAdjustmentLogs = (logs: ToolAdjustmentLog[]) =>
+  setToStorage(STORAGE_KEYS.adjustmentLogs, logs);

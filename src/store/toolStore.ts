@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Tool, ToolCategory, Building, Reservation } from '@/types';
+import type { Tool, ToolCategory, Building, Reservation, ToolAdjustmentLog } from '@/types';
 import {
   getTools,
   setTools,
@@ -8,14 +8,20 @@ import {
   getReservations,
   setReservations,
   generateId,
+  getAdjustmentLogs,
+  setAdjustmentLogs,
+  getBuildings as getBuildingsList,
 } from '@/utils/storage';
 import { getCurrentTimeISO, formatDate } from '@/utils/date';
+import { useRecordStore } from './recordStore';
+import { parseISO, areIntervalsOverlapping } from 'date-fns';
 
 interface ToolState {
   tools: Tool[];
   categories: ToolCategory[];
   buildings: Building[];
   reservations: Reservation[];
+  adjustmentLogs: ToolAdjustmentLog[];
   searchKeyword: string;
   selectedCategory: string;
   selectedBuilding: string;
@@ -41,6 +47,13 @@ interface ToolState {
   updateReservationStatus: (reservationId: string, status: Reservation['status']) => void;
   isToolAvailable: (toolId: string, startTime: string, endTime: string) => boolean;
   updateTool: (toolId: string, updates: Partial<Tool>) => void;
+  addAdjustmentLog: (
+    toolId: string,
+    operatorId: string,
+    operatorName: string,
+    changes: ToolAdjustmentLog['changes']
+  ) => ToolAdjustmentLog;
+  getAdjustmentLogsByTool: (toolId: string) => ToolAdjustmentLog[];
 }
 
 export const useToolStore = create<ToolState>((set, get) => ({
@@ -48,6 +61,7 @@ export const useToolStore = create<ToolState>((set, get) => ({
   categories: getCategories(),
   buildings: getBuildings(),
   reservations: getReservations(),
+  adjustmentLogs: getAdjustmentLogs(),
   searchKeyword: '',
   selectedCategory: '',
   selectedBuilding: '',
@@ -80,28 +94,43 @@ export const useToolStore = create<ToolState>((set, get) => ({
   getAvailableSlots: (toolId: string, date: string) => {
     const slots: boolean[] = Array(14).fill(true);
     const { reservations, tools } = get();
+    const { records } = useRecordStore.getState();
     const tool = tools.find((t) => t.id === toolId);
     const totalStock = tool?.totalStock || 1;
     const dateStr = formatDate(date);
 
-    reservations
-      .filter((r) => r.toolId === toolId && r.status !== 'cancelled')
-      .forEach((r) => {
-        const startDate = formatDate(r.startTime);
-        const endDate = formatDate(r.endTime);
-        if (dateStr >= startDate && dateStr <= endDate) {
-          const sameDayCount = reservations.filter(
-            (other) =>
-              other.toolId === toolId &&
-              other.status !== 'cancelled' &&
-              dateStr >= formatDate(other.startTime) &&
-              dateStr <= formatDate(other.endTime)
-          ).length;
-          if (sameDayCount >= totalStock) {
-            slots.fill(false);
+    for (let slotIndex = 0; slotIndex < 14; slotIndex++) {
+      const slotStartHour = 8 + slotIndex;
+      const slotEndHour = slotStartHour + 1;
+      const slotStartTime = parseISO(`${dateStr}T${String(slotStartHour).padStart(2, '0')}:00:00`);
+      const slotEndTime = parseISO(`${dateStr}T${String(slotEndHour).padStart(2, '0')}:00:00`);
+
+      let occupiedCount = 0;
+
+      reservations
+        .filter((r) => r.toolId === toolId && r.status !== 'cancelled')
+        .forEach((r) => {
+          const rStart = parseISO(r.startTime);
+          const rEnd = parseISO(r.endTime);
+          if (areIntervalsOverlapping({ start: slotStartTime, end: slotEndTime }, { start: rStart, end: rEnd })) {
+            occupiedCount++;
           }
-        }
-      });
+        });
+
+      records
+        .filter((r) => r.toolId === toolId && r.status === 'borrowed')
+        .forEach((r) => {
+          const rStart = parseISO(r.borrowTime);
+          const rEnd = parseISO(r.expectedReturnTime);
+          if (areIntervalsOverlapping({ start: slotStartTime, end: slotEndTime }, { start: rStart, end: rEnd })) {
+            occupiedCount++;
+          }
+        });
+
+      if (occupiedCount >= totalStock) {
+        slots[slotIndex] = false;
+      }
+    }
 
     return slots;
   },
@@ -185,28 +214,137 @@ export const useToolStore = create<ToolState>((set, get) => ({
 
   isToolAvailable: (toolId: string, startTime: string, endTime: string) => {
     const { reservations, tools } = get();
+    const { records } = useRecordStore.getState();
     const tool = tools.find((t) => t.id === toolId);
     if (!tool) return false;
     if (tool.availableStock <= 0) return false;
 
-    const start = formatDate(startTime);
-    const end = formatDate(endTime);
+    const totalStock = tool.totalStock;
+    const start = parseISO(startTime);
+    const end = parseISO(endTime);
 
-    const overlappingCount = reservations.filter((r) => {
-      if (r.toolId !== toolId || r.status === 'cancelled') return false;
-      const rStart = formatDate(r.startTime);
-      const rEnd = formatDate(r.endTime);
-      return start <= rEnd && end >= rStart;
-    }).length;
+    const startHour = start.getHours();
+    const endHour = end.getHours() === 0 ? 24 : end.getHours();
+    const startDay = new Date(start).setHours(0, 0, 0, 0);
+    const endDay = new Date(end).setHours(0, 0, 0, 0);
+    const oneDay = 24 * 60 * 60 * 1000;
 
-    return overlappingCount < tool.totalStock;
+    for (let dayTs = startDay; dayTs <= endDay; dayTs += oneDay) {
+      const dayDate = new Date(dayTs);
+      const dayStr = `${dayDate.getFullYear()}-${String(dayDate.getMonth() + 1).padStart(2, '0')}-${String(dayDate.getDate()).padStart(2, '0')}`;
+
+      const dayStartHour = dayTs === startDay ? Math.max(8, startHour) : 8;
+      const dayEndHour = dayTs === endDay ? Math.min(22, endHour) : 22;
+
+      for (let h = dayStartHour; h < dayEndHour; h++) {
+        const slotStart = parseISO(`${dayStr}T${String(h).padStart(2, '0')}:00:00`);
+        const slotEnd = parseISO(`${dayStr}T${String(h + 1).padStart(2, '0')}:00:00`);
+
+        let occupiedCount = 0;
+
+        reservations
+          .filter((r) => r.toolId === toolId && r.status !== 'cancelled')
+          .forEach((r) => {
+            const rStart = parseISO(r.startTime);
+            const rEnd = parseISO(r.endTime);
+            if (areIntervalsOverlapping({ start: slotStart, end: slotEnd }, { start: rStart, end: rEnd })) {
+              occupiedCount++;
+            }
+          });
+
+        records
+          .filter((r) => r.toolId === toolId && r.status === 'borrowed')
+          .forEach((r) => {
+            const rStart = parseISO(r.borrowTime);
+            const rEnd = parseISO(r.expectedReturnTime);
+            if (areIntervalsOverlapping({ start: slotStart, end: slotEnd }, { start: rStart, end: rEnd })) {
+              occupiedCount++;
+            }
+          });
+
+        if (occupiedCount >= totalStock) {
+          return false;
+        }
+      }
+    }
+
+    return true;
+  },
+
+  addAdjustmentLog: (toolId, operatorId, operatorName, changes) => {
+    const newLog: ToolAdjustmentLog = {
+      id: generateId('ADJ'),
+      toolId,
+      operatorId,
+      operatorName,
+      changes,
+      createdAt: getCurrentTimeISO(),
+    };
+    const logs = [...get().adjustmentLogs, newLog];
+    setAdjustmentLogs(logs);
+    set({ adjustmentLogs: logs });
+    return newLog;
+  },
+
+  getAdjustmentLogsByTool: (toolId: string) => {
+    return [...get().adjustmentLogs]
+      .filter((l) => l.toolId === toolId)
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   },
 
   updateTool: (toolId: string, updates: Partial<Tool>) => {
+    const oldTool = get().tools.find((t) => t.id === toolId);
+    if (!oldTool) return;
+
     const tools = get().tools.map((t) =>
       t.id === toolId ? { ...t, ...updates } : t
     );
     setTools(tools);
     set({ tools });
+
+    const buildingMap: Record<string, string> = {};
+    getBuildingsList().forEach((b) => {
+      buildingMap[b.id] = b.name;
+    });
+    const labelMap: Record<string, string> = {
+      buildingId: '所在楼栋',
+      totalStock: '总库存',
+      availableStock: '可用库存',
+      name: '工具名称',
+      specification: '规格',
+      depositAmount: '押金金额',
+      description: '描述',
+      image: '图片',
+      categoryId: '分类',
+      location: '存放位置',
+    };
+
+    const changes: ToolAdjustmentLog['changes'] = [];
+    Object.keys(updates).forEach((field) => {
+      const key = field as keyof Tool;
+      const oldVal = oldTool[key];
+      const newVal = updates[key];
+      if (JSON.stringify(oldVal) !== JSON.stringify(newVal) && oldVal !== undefined) {
+        let displayOld: string | number = oldVal as string | number;
+        let displayNew: string | number = newVal as string | number;
+        if (field === 'buildingId') {
+          displayOld = buildingMap[oldTool.buildingId] || oldTool.buildingId;
+          displayNew = buildingMap[String(newVal)] || String(newVal);
+        }
+        changes.push({
+          field,
+          label: labelMap[field] || field,
+          oldValue: displayOld,
+          newValue: displayNew,
+        });
+      }
+    });
+
+    if (changes.length > 0) {
+      const curUser = useRecordStore.getState().getCurrentUserState();
+      if (curUser) {
+        get().addAdjustmentLog(toolId, curUser.id, curUser.name, changes);
+      }
+    }
   },
 }));

@@ -18,6 +18,7 @@ import {
   MapPin,
   User,
   Phone,
+  Settings,
 } from 'lucide-react';
 import { Modal } from '@/components/Modal';
 import { StatusBadge } from '@/components/StatusBadge';
@@ -315,6 +316,226 @@ export const Records = () => {
               </div>
               <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center">
                 <Ban className="w-6 h-6 text-red-500" />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {currentUser.role === 'admin' && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 mb-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+            <Settings className="w-5 h-5 text-primary-500" />
+            今日工作台
+          </h3>
+          <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-4 gap-4">
+            {/* 待取件 */}
+            <div className="border border-blue-100 bg-blue-50/30 rounded-xl p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="font-semibold text-gray-900 flex items-center gap-2">
+                  <QrCode className="w-4 h-4 text-blue-500" />
+                  待取件
+                </h4>
+                <span className="px-2.5 py-0.5 bg-blue-500 text-white text-xs font-bold rounded-full">
+                  {reservations.filter((r) => r.status === 'approved').length}
+                </span>
+              </div>
+              <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                {reservations
+                  .filter((r) => r.status === 'approved')
+                  .slice(0, 5)
+                  .map((r) => {
+                    const tool = getTool(r.toolId);
+                    const user = getUser(r.userId);
+                    return (
+                      <div
+                        key={r.id}
+                        className="bg-white rounded-lg p-3 border border-blue-100 hover:shadow-sm transition-shadow"
+                      >
+                        <div className="flex items-start gap-2">
+                          <img src={tool?.image} className="w-10 h-10 object-cover rounded-md" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-gray-900 truncate">{tool?.name}</p>
+                            <p className="text-xs text-gray-500 truncate">{user?.name}</p>
+                            <p className="text-xs text-blue-600">{formatDateCN(r.startTime)}</p>
+                          </div>
+                          <button
+                            onClick={() => {
+                              setScanCode(r.id);
+                              setShowBorrowModal(true);
+                            }}
+                            className="px-2 py-1 bg-blue-500 hover:bg-blue-600 text-white text-xs rounded-md flex-shrink-0"
+                          >
+                            借出
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                {reservations.filter((r) => r.status === 'approved').length === 0 && (
+                  <p className="text-center text-xs text-gray-400 py-6">暂无待取件</p>
+                )}
+              </div>
+            </div>
+
+            {/* 待归还 */}
+            <div className="border border-green-100 bg-green-50/30 rounded-xl p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="font-semibold text-gray-900 flex items-center gap-2">
+                  <CheckCircle className="w-4 h-4 text-green-500" />
+                  今日待归还
+                </h4>
+                <span className="px-2.5 py-0.5 bg-green-500 text-white text-xs font-bold rounded-full">
+                  {records.filter((r) => {
+                    if (r.status !== 'borrowed') return false;
+                    const today = new Date().toISOString().split('T')[0];
+                    const expDate = r.expectedReturnTime.split('T')[0];
+                    return expDate <= today && !isOverdue(r.expectedReturnTime);
+                  }).length}
+                </span>
+              </div>
+              <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                {records
+                  .filter((r) => {
+                    if (r.status !== 'borrowed') return false;
+                    const today = new Date().toISOString().split('T')[0];
+                    const expDate = r.expectedReturnTime.split('T')[0];
+                    return expDate <= today && !isOverdue(r.expectedReturnTime);
+                  })
+                  .slice(0, 5)
+                  .map((r) => {
+                    const tool = getTool(r.toolId);
+                    const user = getUser(r.userId);
+                    return (
+                      <div
+                        key={r.id}
+                        className="bg-white rounded-lg p-3 border border-green-100 hover:shadow-sm transition-shadow"
+                      >
+                        <div className="flex items-start gap-2">
+                          <img src={tool?.image} className="w-10 h-10 object-cover rounded-md" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-gray-900 truncate">{tool?.name}</p>
+                            <p className="text-xs text-gray-500 truncate">{user?.name}</p>
+                            <p className="text-xs text-green-600">
+                              应还：{formatDateCN(r.expectedReturnTime)}
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => {
+                              setSelectedRecord(r);
+                              setShowReturnModal(true);
+                            }}
+                            className="px-2 py-1 bg-green-500 hover:bg-green-600 text-white text-xs rounded-md flex-shrink-0"
+                          >
+                            归还
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                {records.filter((r) => {
+                    if (r.status !== 'borrowed') return false;
+                    const today = new Date().toISOString().split('T')[0];
+                    const expDate = r.expectedReturnTime.split('T')[0];
+                    return expDate <= today && !isOverdue(r.expectedReturnTime);
+                  }).length === 0 && (
+                  <p className="text-center text-xs text-gray-400 py-6">暂无今日待归还</p>
+                )}
+              </div>
+            </div>
+
+            {/* 逾期 */}
+            <div className="border border-red-100 bg-red-50/30 rounded-xl p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="font-semibold text-gray-900 flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-red-500" />
+                  逾期未还
+                </h4>
+                <span className="px-2.5 py-0.5 bg-red-500 text-white text-xs font-bold rounded-full">
+                  {overdueRecords.length}
+                </span>
+              </div>
+              <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                {overdueRecords.slice(0, 5).map((r) => {
+                  const tool = getTool(r.toolId);
+                  const user = getUser(r.userId);
+                  return (
+                    <div
+                      key={r.id}
+                      className="bg-white rounded-lg p-3 border border-red-100 hover:shadow-sm transition-shadow"
+                    >
+                      <div className="flex items-start gap-2">
+                        <img src={tool?.image} className="w-10 h-10 object-cover rounded-md" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-gray-900 truncate">{tool?.name}</p>
+                          <p className="text-xs text-gray-500 truncate">{user?.name}</p>
+                          <p className="text-xs text-red-600">
+                            逾期：{formatDateCN(r.expectedReturnTime)}
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => {
+                            setSelectedRecord(r);
+                            setShowReturnModal(true);
+                          }}
+                          className="px-2 py-1 bg-red-500 hover:bg-red-600 text-white text-xs rounded-md flex-shrink-0"
+                        >
+                          催还
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+                {overdueRecords.length === 0 && (
+                  <p className="text-center text-xs text-gray-400 py-6">暂无逾期</p>
+                )}
+              </div>
+            </div>
+
+            {/* 损坏待处理 */}
+            <div className="border border-orange-100 bg-orange-50/30 rounded-xl p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="font-semibold text-gray-900 flex items-center gap-2">
+                  <Ban className="w-4 h-4 text-orange-500" />
+                  损坏待处理
+                </h4>
+                <span className="px-2.5 py-0.5 bg-orange-500 text-white text-xs font-bold rounded-full">
+                  {damageReports.filter((d) => d.status === 'pending').length}
+                </span>
+              </div>
+              <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                {damageReports
+                  .filter((d) => d.status === 'pending')
+                  .slice(0, 5)
+                  .map((d) => {
+                    const r = records.find((x) => x.id === d.recordId);
+                    const tool = r ? getTool(r.toolId) : null;
+                    const user = getUser(d.userId);
+                    return (
+                      <div
+                        key={d.id}
+                        className="bg-white rounded-lg p-3 border border-orange-100 hover:shadow-sm transition-shadow"
+                      >
+                        <div className="flex items-start gap-2">
+                          <img src={d.image} className="w-10 h-10 object-cover rounded-md" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-gray-900 truncate">{tool?.name}</p>
+                            <p className="text-xs text-gray-500 truncate">{user?.name}</p>
+                            <p className="text-xs text-orange-600 truncate">{d.description}</p>
+                          </div>
+                          <button
+                            onClick={() => handleProcessDamage(d)}
+                            className="px-2 py-1 bg-orange-500 hover:bg-orange-600 text-white text-xs rounded-md flex-shrink-0"
+                          >
+                            处理
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                {damageReports.filter((d) => d.status === 'pending').length === 0 && (
+                  <p className="text-center text-xs text-gray-400 py-6">暂无损坏待处理</p>
+                )}
               </div>
             </div>
           </div>
@@ -829,10 +1050,17 @@ export const Records = () => {
                         完好归还
                       </button>
                       <button
-                        onClick={() => confirmReturn(true)}
+                        onClick={() => {
+                          setShowReturnModal(false);
+                          if (selectedRecord) {
+                            setDamageDescription('');
+                            setDamageImage('');
+                            setShowDamageModal(true);
+                          }
+                        }}
                         className="flex-1 px-4 py-3 bg-orange-500 hover:bg-orange-600 text-white font-medium rounded-lg"
                       >
-                        有损坏
+                        有损坏，去上报
                       </button>
                     </div>
                   </>

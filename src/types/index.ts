@@ -10,12 +10,28 @@ export type DamageReportStatus = 'pending' | 'processed';
 
 export type DepositType = 'recharge' | 'refund' | 'freeze' | 'unfreeze';
 
+export interface ToolAdjustmentLog {
+  id: string;
+  toolId: string;
+  operatorId: string;
+  operatorName: string;
+  changes: {
+    field: string;
+    label: string;
+    oldValue: string | number;
+    newValue: string | number;
+  }[];
+  createdAt: string;
+}
+
 export interface User {
   id: string;
   name: string;
   phone: string;
   roomNumber: string;
   role: UserRole;
+  username?: string;
+  password?: string;
   isBlacklisted: boolean;
   depositBalance: number;
   avatar: string;
