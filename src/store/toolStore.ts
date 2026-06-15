@@ -39,6 +39,8 @@ interface ToolState {
   getReservationsByUser: (userId: string) => Reservation[];
   getReservationsByTool: (toolId: string) => Reservation[];
   updateReservationStatus: (reservationId: string, status: Reservation['status']) => void;
+  isToolAvailable: (toolId: string, startTime: string, endTime: string) => boolean;
+  updateTool: (toolId: string, updates: Partial<Tool>) => void;
 }
 
 export const useToolStore = create<ToolState>((set, get) => ({
@@ -77,7 +79,9 @@ export const useToolStore = create<ToolState>((set, get) => ({
 
   getAvailableSlots: (toolId: string, date: string) => {
     const slots: boolean[] = Array(14).fill(true);
-    const { reservations } = get();
+    const { reservations, tools } = get();
+    const tool = tools.find((t) => t.id === toolId);
+    const totalStock = tool?.totalStock || 1;
     const dateStr = formatDate(date);
 
     reservations
@@ -86,7 +90,16 @@ export const useToolStore = create<ToolState>((set, get) => ({
         const startDate = formatDate(r.startTime);
         const endDate = formatDate(r.endTime);
         if (dateStr >= startDate && dateStr <= endDate) {
-          slots.fill(false);
+          const sameDayCount = reservations.filter(
+            (other) =>
+              other.toolId === toolId &&
+              other.status !== 'cancelled' &&
+              dateStr >= formatDate(other.startTime) &&
+              dateStr <= formatDate(other.endTime)
+          ).length;
+          if (sameDayCount >= totalStock) {
+            slots.fill(false);
+          }
         }
       });
 
@@ -168,5 +181,32 @@ export const useToolStore = create<ToolState>((set, get) => ({
     );
     setReservations(reservations);
     set({ reservations });
+  },
+
+  isToolAvailable: (toolId: string, startTime: string, endTime: string) => {
+    const { reservations, tools } = get();
+    const tool = tools.find((t) => t.id === toolId);
+    if (!tool) return false;
+    if (tool.availableStock <= 0) return false;
+
+    const start = formatDate(startTime);
+    const end = formatDate(endTime);
+
+    const overlappingCount = reservations.filter((r) => {
+      if (r.toolId !== toolId || r.status === 'cancelled') return false;
+      const rStart = formatDate(r.startTime);
+      const rEnd = formatDate(r.endTime);
+      return start <= rEnd && end >= rStart;
+    }).length;
+
+    return overlappingCount < tool.totalStock;
+  },
+
+  updateTool: (toolId: string, updates: Partial<Tool>) => {
+    const tools = get().tools.map((t) =>
+      t.id === toolId ? { ...t, ...updates } : t
+    );
+    setTools(tools);
+    set({ tools });
   },
 }));

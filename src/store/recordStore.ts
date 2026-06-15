@@ -117,7 +117,7 @@ export const useRecordStore = create<RecordState>((set, get) => ({
 
     const authStore = useAuthStore.getState();
     if (!isDamaged) {
-      authStore.updateDepositBalance(record.userId, record.depositAmount, 'refund', '工具归还押金退还');
+      authStore.updateDepositBalance(record.userId, record.depositAmount, 'unfreeze', '工具完好归还，释放占用押金');
     } else {
       const user = authStore.users.find((u) => u.id === record.userId);
       if (user) {
@@ -174,6 +174,47 @@ export const useRecordStore = create<RecordState>((set, get) => ({
 
     const report = get().damageReports.find((r) => r.id === reportId);
     if (report) {
+      const record = get().records.find((r) => r.id === report.recordId);
+      if (record && record.status === 'borrowed') {
+        const updatedRecords = get().records.map((r) =>
+          r.id === report.recordId
+            ? {
+                ...r,
+                status: 'damaged' as const,
+                actualReturnTime: getCurrentTimeISO(),
+                isOverdue: isOverdue(r.expectedReturnTime),
+              }
+            : r
+        );
+        setRecords(updatedRecords);
+        set({ records: updatedRecords });
+
+        useToolStore.getState().updateToolStock(record.toolId, 1);
+
+        const authStore = useAuthStore.getState();
+        const user = authStore.users.find((u) => u.id === record.userId);
+        if (user) {
+          const newDamageCount = user.damageCount + 1;
+          authStore.updateUser({
+            ...user,
+            damageCount: newDamageCount,
+            isBlacklisted: user.overdueCount >= 5 || newDamageCount >= 3,
+          });
+        }
+
+        if (isOverdue(record.expectedReturnTime)) {
+          const user = authStore.users.find((u) => u.id === record.userId);
+          if (user) {
+            const newOverdueCount = user.overdueCount + 1;
+            authStore.updateUser({
+              ...user,
+              overdueCount: newOverdueCount,
+              isBlacklisted: newOverdueCount >= 5 || user.damageCount >= 3,
+            });
+          }
+        }
+      }
+
       const newCompensation: Compensation = {
         id: generateId('CMP'),
         recordId: report.recordId,
@@ -187,16 +228,15 @@ export const useRecordStore = create<RecordState>((set, get) => ({
       setCompensations(compensations);
       set({ compensations });
 
-      const authStore = useAuthStore.getState();
-      const record = get().records.find((r) => r.id === report.recordId);
       if (record) {
         const refundAmount = Math.max(0, record.depositAmount - compensationAmount);
         if (refundAmount > 0) {
+          const authStore = useAuthStore.getState();
           authStore.updateDepositBalance(
             report.userId,
             refundAmount,
-            'refund',
-            `损坏赔付${compensationAmount}元后退还剩余押金`
+            'unfreeze',
+            `损坏赔付${compensationAmount}元后释放剩余占用押金`
           );
         }
       }

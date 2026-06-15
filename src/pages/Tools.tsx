@@ -14,11 +14,14 @@ import {
   ChevronRight,
   Eye,
   QrCode,
+  Settings,
+  Save,
 } from 'lucide-react';
 import { ToolCard } from '@/components/ToolCard';
 import { Modal } from '@/components/Modal';
 import { QRCodeDisplay } from '@/components/QRCodeDisplay';
 import { useToolStore } from '@/store/toolStore';
+import { useAuthStore } from '@/store/authStore';
 import { formatDateCN, getTodayDateString } from '@/utils/date';
 import type { Tool } from '@/types';
 
@@ -40,13 +43,20 @@ export const Tools = () => {
     getFilteredTools,
     getToolById,
     getAvailableSlots,
+    updateTool,
   } = useToolStore();
+  const { currentUser } = useAuthStore();
 
   const [searchInput, setSearchInput] = useState(searchKeyword);
   const [showFilters, setShowFilters] = useState(false);
   const [selectedTool, setSelectedTool] = useState<Tool | null>(null);
   const [selectedDate, setSelectedDate] = useState(getTodayDateString());
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [showAdjustModal, setShowAdjustModal] = useState(false);
+  const [adjustBuildingId, setAdjustBuildingId] = useState('');
+  const [adjustTotalStock, setAdjustTotalStock] = useState('');
+  const [adjustAvailableStock, setAdjustAvailableStock] = useState('');
+  const [adjustToast, setAdjustToast] = useState({ show: false, message: '', type: 'success' as 'success' | 'error' });
 
   const filteredTools = getFilteredTools();
 
@@ -78,6 +88,33 @@ export const Tools = () => {
   const handleReserve = (tool: Tool) => {
     setSelectedTool(null);
     navigate(`/reserve/${tool.id}`);
+  };
+
+  const openAdjustModal = (tool: Tool) => {
+    setAdjustBuildingId(tool.buildingId);
+    setAdjustTotalStock(String(tool.totalStock));
+    setAdjustAvailableStock(String(tool.availableStock));
+    setShowAdjustModal(true);
+  };
+
+  const handleAdjustSave = () => {
+    if (!selectedTool) return;
+    const total = Number(adjustTotalStock);
+    const available = Number(adjustAvailableStock);
+    if (total <= 0 || available < 0 || available > total) {
+      setAdjustToast({ show: true, message: '库存数量不合理，可用数量不能超过总数且不能为负', type: 'error' });
+      setTimeout(() => setAdjustToast({ show: false, message: '', type: 'success' }), 3000);
+      return;
+    }
+    updateTool(selectedTool.id, {
+      buildingId: adjustBuildingId,
+      totalStock: total,
+      availableStock: available,
+    });
+    setSelectedTool(null);
+    setShowAdjustModal(false);
+    setAdjustToast({ show: true, message: '工具调配成功', type: 'success' });
+    setTimeout(() => setAdjustToast({ show: false, message: '', type: 'success' }), 3000);
   };
 
   const getCategoryName = (categoryId: string) => {
@@ -510,6 +547,15 @@ export const Tools = () => {
 
             {/* Actions */}
             <div className="flex flex-col sm:flex-row gap-3 pt-4">
+              {currentUser?.role === 'admin' && (
+                <button
+                  onClick={() => openAdjustModal(selectedTool)}
+                  className="flex-1 py-3 rounded-xl font-semibold transition-all flex items-center justify-center gap-2 bg-orange-500 hover:bg-orange-600 text-white hover:shadow-lg active:scale-98"
+                >
+                  <Settings className="w-5 h-5" />
+                  调配工具
+                </button>
+              )}
               <button
                 onClick={() => handleReserve(selectedTool)}
                 disabled={selectedTool.availableStock === 0 || !isAvailableToday}
@@ -537,6 +583,94 @@ export const Tools = () => {
           </div>
         )}
       </Modal>
+
+      {/* Adjust Tool Modal */}
+      <Modal
+        isOpen={showAdjustModal}
+        onClose={() => setShowAdjustModal(false)}
+        title="调配工具"
+        size="md"
+      >
+        <div className="p-6">
+          {selectedTool && (
+            <>
+              <div className="flex items-center gap-4 mb-6">
+                <img src={selectedTool.image} alt="" className="w-16 h-16 object-cover rounded-lg" />
+                <div>
+                  <h4 className="font-semibold text-gray-900">{selectedTool.name}</h4>
+                  <p className="text-sm text-gray-500">{selectedTool.specification}</p>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">所在楼栋</label>
+                  <select
+                    value={adjustBuildingId}
+                    onChange={(e) => setAdjustBuildingId(e.target.value)}
+                    className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
+                  >
+                    {buildings.map((b) => (
+                      <option key={b.id} value={b.id}>{b.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">总库存数量</label>
+                  <input
+                    type="number"
+                    value={adjustTotalStock}
+                    onChange={(e) => setAdjustTotalStock(e.target.value)}
+                    min="1"
+                    className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
+                  />
+                  <p className="text-xs text-gray-400 mt-1">当前值：{selectedTool.totalStock}</p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">可用库存数量</label>
+                  <input
+                    type="number"
+                    value={adjustAvailableStock}
+                    onChange={(e) => setAdjustAvailableStock(e.target.value)}
+                    min="0"
+                    max={adjustTotalStock}
+                    className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
+                  />
+                  <p className="text-xs text-gray-400 mt-1">当前值：{selectedTool.availableStock}（不可超过总库存）</p>
+                </div>
+              </div>
+
+              <div className="flex gap-3 mt-6">
+                <button
+                  onClick={() => setShowAdjustModal(false)}
+                  className="flex-1 px-4 py-3 border border-gray-200 text-gray-700 font-medium rounded-lg hover:bg-gray-50"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={handleAdjustSave}
+                  className="flex-1 px-4 py-3 bg-primary-500 hover:bg-primary-600 text-white font-medium rounded-lg flex items-center justify-center gap-2"
+                >
+                  <Save className="w-4 h-4" />
+                  保存调配
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </Modal>
+
+      {adjustToast.show && (
+        <div
+          className={`fixed top-4 right-4 px-6 py-3 rounded-lg shadow-lg text-white z-50 ${
+            adjustToast.type === 'success' ? 'bg-green-500' : 'bg-red-500'
+          }`}
+        >
+          {adjustToast.message}
+        </div>
+      )}
     </div>
   );
 };

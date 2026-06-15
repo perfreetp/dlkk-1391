@@ -70,6 +70,8 @@ export const initializeData = () => {
   }
 };
 
+initializeData();
+
 export const getFromStorage = <T>(key: string): T => {
   const data = localStorage.getItem(key);
   return (data ? JSON.parse(data) : []) as T;

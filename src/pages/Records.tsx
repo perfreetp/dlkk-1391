@@ -712,7 +712,10 @@ export const Records = () => {
                       {record.status === 'borrowed' && currentUser.role !== 'admin' && (
                         <>
                           <button
-                            onClick={() => confirmReturn(false)}
+                            onClick={() => {
+                              setSelectedRecord(record);
+                              setShowReturnModal(true);
+                            }}
                             className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white text-sm font-medium rounded-lg"
                           >
                             归还

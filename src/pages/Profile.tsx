@@ -17,6 +17,7 @@ import {
   ChevronDown,
   ChevronUp,
   CheckCircle,
+  Snowflake,
 } from 'lucide-react';
 import { Modal } from '@/components/Modal';
 import { LoginModal } from '@/components/LoginModal';
@@ -400,43 +401,61 @@ export const Profile = () => {
                 </h3>
                 {userDeposits.length > 0 ? (
                   <div className="space-y-2">
-                    {userDeposits.map((deposit: Deposit) => (
-                      <div
-                        key={deposit.id}
-                        className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
-                      >
-                        <div className="flex items-center gap-3">
-                          <div
-                            className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                              deposit.type === 'recharge'
-                                ? 'bg-green-100 text-green-600'
-                                : 'bg-orange-100 text-orange-600'
-                            }`}
-                          >
-                            {deposit.type === 'recharge' ? (
-                              <Plus className="w-4 h-4" />
-                            ) : (
-                              <ArrowDownLeft className="w-4 h-4" />
-                            )}
-                          </div>
-                          <div>
-                            <p className="font-medium text-gray-900 text-sm">
-                              {deposit.type === 'recharge' ? '押金充值' : '押金退还'}
-                            </p>
-                            <p className="text-xs text-gray-500">
-                              {deposit.remark || formatDateTime(deposit.createdAt)}
-                            </p>
-                          </div>
-                        </div>
-                        <span
-                          className={`font-semibold ${
-                            deposit.type === 'recharge' ? 'text-green-600' : 'text-orange-600'
-                          }`}
+                    {userDeposits.map((deposit: Deposit) => {
+                      const isIncrease = deposit.type === 'recharge' || deposit.type === 'unfreeze';
+                      const typeLabel: Record<string, string> = {
+                        recharge: '押金充值',
+                        refund: '押金退还',
+                        freeze: '预约占用押金',
+                        unfreeze: '释放占用押金',
+                      };
+                      const iconBg = deposit.type === 'freeze'
+                        ? 'bg-blue-100 text-blue-600'
+                        : deposit.type === 'unfreeze'
+                        ? 'bg-cyan-100 text-cyan-600'
+                        : isIncrease
+                        ? 'bg-green-100 text-green-600'
+                        : 'bg-orange-100 text-orange-600';
+                      const amountColor = deposit.type === 'freeze'
+                        ? 'text-blue-600'
+                        : deposit.type === 'unfreeze'
+                        ? 'text-cyan-600'
+                        : isIncrease
+                        ? 'text-green-600'
+                        : 'text-orange-600';
+                      const amountPrefix = deposit.type === 'freeze' ? '-' : deposit.type === 'unfreeze' ? '+' : isIncrease ? '+' : '-';
+                      return (
+                        <div
+                          key={deposit.id}
+                          className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
                         >
-                          {deposit.type === 'recharge' ? '+' : '-'}¥{deposit.amount}
-                        </span>
-                      </div>
-                    ))}
+                          <div className="flex items-center gap-3">
+                            <div className={`w-8 h-8 rounded-full flex items-center justify-center ${iconBg}`}>
+                              {deposit.type === 'freeze' ? (
+                                <Snowflake className="w-4 h-4" />
+                              ) : deposit.type === 'unfreeze' ? (
+                                <CheckCircle className="w-4 h-4" />
+                              ) : isIncrease ? (
+                                <Plus className="w-4 h-4" />
+                              ) : (
+                                <ArrowDownLeft className="w-4 h-4" />
+                              )}
+                            </div>
+                            <div>
+                              <p className="font-medium text-gray-900 text-sm">
+                                {typeLabel[deposit.type] || '未知'}
+                              </p>
+                              <p className="text-xs text-gray-500">
+                                {deposit.remark || formatDateTime(deposit.createdAt)}
+                              </p>
+                            </div>
+                          </div>
+                          <span className={`font-semibold ${amountColor}`}>
+                            {amountPrefix}¥{deposit.amount}
+                          </span>
+                        </div>
+                      );
+                    })}
                   </div>
                 ) : (
                   <div className="text-center py-8">

@@ -8,7 +8,7 @@ export type NoticeType = 'announcement' | 'faq';
 
 export type DamageReportStatus = 'pending' | 'processed';
 
-export type DepositType = 'recharge' | 'refund';
+export type DepositType = 'recharge' | 'refund' | 'freeze' | 'unfreeze';
 
 export interface User {
   id: string;

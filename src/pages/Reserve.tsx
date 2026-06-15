@@ -28,7 +28,7 @@ import type { Reservation } from '@/types';
 export const Reserve = () => {
   const { toolId } = useParams<{ toolId: string }>();
   const navigate = useNavigate();
-  const { getToolById, createReservation, buildings, categories } = useToolStore();
+  const { getToolById, createReservation, buildings, categories, isToolAvailable } = useToolStore();
   const { currentUser, updateDepositBalance } = useAuthStore();
   const { borrowTool } = useRecordStore();
 
@@ -129,6 +129,11 @@ export const Reserve = () => {
     const startTimeISO = `${startDate}T${startTime}:00`;
     const endTimeISO = `${endDate}T${endTime}:00`;
 
+    if (!isToolAvailable(tool.id, startTimeISO, endTimeISO)) {
+      setError('该时段工具已被约满，请选择其他时间');
+      return;
+    }
+
     const reservation = createReservation(
       currentUser.id,
       tool.id,
@@ -138,7 +143,7 @@ export const Reserve = () => {
     );
 
     if (reservation) {
-      updateDepositBalance(currentUser.id, totalDeposit, 'recharge', `预约${tool.name}押金`);
+      updateDepositBalance(currentUser.id, totalDeposit, 'freeze', `预约${tool.name}占用押金`);
       setCreatedReservation(reservation);
       setShowSuccess(true);
     } else {

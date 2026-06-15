@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { User } from '@/types';
+import type { User, DepositType } from '@/types';
 import {
   getUsers,
   setUsers,
@@ -18,7 +18,7 @@ interface AuthState {
   loginAsAdmin: (username: string, password: string) => { success: boolean; message: string };
   logout: () => void;
   updateUser: (user: User) => void;
-  updateDepositBalance: (userId: string, amount: number, type: 'recharge' | 'refund', remark?: string) => void;
+  updateDepositBalance: (userId: string, amount: number, type: DepositType, remark?: string) => void;
   toggleBlacklist: (userId: string) => void;
   checkBlacklist: (userId: string) => boolean;
 }
@@ -97,15 +97,18 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
 
-  updateDepositBalance: (userId: string, amount: number, type: 'recharge' | 'refund', remark?: string) => {
+  updateDepositBalance: (userId: string, amount: number, type: DepositType, remark?: string) => {
     const users = getUsers();
     const user = users.find((u) => u.id === userId);
     if (!user) return;
 
-    const updatedUser = {
-      ...user,
-      depositBalance: type === 'recharge' ? user.depositBalance + amount : user.depositBalance - amount,
-    };
+    let newBalance = user.depositBalance;
+    if (type === 'recharge') newBalance = user.depositBalance + amount;
+    else if (type === 'freeze') newBalance = user.depositBalance - amount;
+    else if (type === 'unfreeze') newBalance = user.depositBalance + amount;
+    else if (type === 'refund') newBalance = user.depositBalance + amount;
+
+    const updatedUser = { ...user, depositBalance: newBalance };
     const updatedUsers = users.map((u) => (u.id === userId ? updatedUser : u));
     setUsers(updatedUsers);
 
